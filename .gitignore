@@ -10,5 +10,9 @@ wheels/
 .venv
 .env
 
-model-cn/
-model-en/
+models/
+*.pt
+*.pth
+*.mp4
+*.tflite
+
