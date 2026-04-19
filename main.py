@@ -10,6 +10,7 @@ import soundfile as sf
 from ollama import chat
 from openai import OpenAI
 from piper import PiperVoice
+from scipy.signal import resample
 
 load_dotenv()
 
@@ -50,10 +51,15 @@ Assistant: “Wow, amazing. Don’t get soft now, bitch.”
 
 if __name__ == "__main__":
     pipe = pipeline("automatic-speech-recognition", model="openai/whisper-small")
+    print(f"======== DEVICE INFO ============")
+    print(sd.query_devices())
+    input_device = 2
+    output_device = 1
+    print(f"Input Device: {input_device}\nOutput Device: {output_device}")
     # m = KittenTTS("./kitten_tts_nano_v0_2.onnx")
     # voice = PiperVoice.load("./en_US-lessac-medium.onnx")
-    # voice = PiperVoice.load("./en_GB-alan-medium.onnx")
-    voice = PiperVoice.load("./en_GB-cori-high.onnx")
+    voice = PiperVoice.load("./en_GB-alan-medium.onnx")
+    # voice = PiperVoice.load("./en_GB-cori-high.onnx")
 
     history = [
         {"role": "system", "content": prompt},
@@ -61,18 +67,31 @@ if __name__ == "__main__":
     while True:
         recording_length = input("Please press Enter to start recording...")
         seconds = float(recording_length) if recording_length else 5
-        sample_rate = 16000
-        audio_data = sd.rec(int(seconds * sample_rate), samplerate=sample_rate, channels=1)
+        sample_rate = 44100 
+        audio_data = sd.rec(
+            int(seconds * sample_rate), 
+            samplerate=sample_rate, 
+            channels=1,
+            device=input_device
+        )
         print("Recording...")
         sd.wait()
         print("Recording complete.")
-        sf.write("output.wav", audio_data, sample_rate)
+
+        # resample
+        print(f"========== RESAMPLE =========")
+        target_sr = 16000
+        new_num_samples = int(len(audio_data) * target_sr / sample_rate)
+        resampled_data = resample(audio_data, new_num_samples)
+        sf.write("output.wav", resampled_data, target_sr)
         print("Audio saved as output.wav")
 
+        print(f"========== ASR ============")
         result = pipe("output.wav", language="en")
         query = result['text']
         print(f"Transcribed text: {query}")
 
+        print(f"========= GENERATING RESPONSE =========")
         print("Generating response...")
         history.append({"role": "user", "content": f"User: {query}\nAssistant: "})
         client = OpenAI(
@@ -97,9 +116,14 @@ if __name__ == "__main__":
 
         print(f"AI response: {text}")
 
+        print(f"============== TTS ============")
         audio_res = voice.synthesize(text)
         for chunk in audio_res:
-            sd.play(chunk.audio_float_array, samplerate=chunk.sample_rate)
+            sd.play(
+                chunk.audio_float_array, 
+                samplerate=chunk.sample_rate,
+                device=output_device
+            )
             sd.wait()
 
         # audio = m.generate(text)
