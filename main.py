@@ -1,71 +1,87 @@
 import cv2
 import mediapipe as mp
 import math
+import time
 
+# 初始化 MediaPipe (針對樹莓派使用 model_complexity=0)
 mp_pose = mp.solutions.pose
-pose = mp_pose.Pose(model_complexity=0, min_detection_confidence=0.7, min_tracking_confidence=0.7)
+pose = mp_pose.Pose(model_complexity=0, min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
-cap = cv2.VideoCapture(0)
+# 強制使用 V4L2 開啟相機
+cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
 
-# 基準值初始化
+# 【關鍵優化】設定極低解析度，保證樹莓派能流暢運行
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+cap.set(cv2.CAP_PROP_FPS, 20)
+
 baseline_diff = None 
+bad_posture_start_time = None  # 計時器開始時間
+alert_duration = 3  # 設定持續 3 秒才報警
 
-print("啟動成功！")
-print("請端正坐好，然後按 's' 鍵校準你的標準坐姿。")
+print("啟動成功！請在樹莓派桌面環境下執行此腳本。")
+print("請端正坐好，按 's' 鍵校準，按 'q' 退出。")
 
 while cap.isOpened():
     ret, frame = cap.read()
-    if not ret: break
+    if not ret:
+        print("讀取影格失敗")
+        break
 
-    frame = cv2.flip(frame, 1) # 鏡像處理
+    frame = cv2.flip(frame, 1)
     h, w, _ = frame.shape
-    image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = pose.process(image)
-    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    
+    # 轉為 RGB 供 MediaPipe 處理
+    rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = pose.process(rgb_image)
 
     if results.pose_landmarks:
         lm = results.pose_landmarks.landmark
         
-        # 1. 獲取關鍵點座標 (像素座標)
-        # 左耳(7), 右耳(8), 左肩(11), 右肩(12)
-        l_ear = [lm[7].x * w, lm[7].y * h]
-        r_ear = [lm[8].x * w, lm[8].y * h]
-        l_shld = [lm[11].x * w, lm[11].y * h]
-        r_shld = [lm[12].x * w, lm[12].y * h]
-
-        # 2. 計算特徵值
-        # 耳朵中點與肩膀中點的垂直距離
-        ear_mid_y = (l_ear[1] + r_ear[1]) / 2
-        shld_mid_y = (l_shld[1] + r_shld[1]) / 2
-        curr_diff = shld_mid_y - ear_mid_y
+        # 獲取像素座標 (7:左耳, 8:右耳, 11:左肩, 12:右肩)
+        ear_y = (lm[7].y + lm[8].y) / 2
+        shld_y = (lm[11].y + lm[12].y) / 2
         
-        # 肩膀寬度（用來做歸一化，防止前後移動導致誤判）
-        shld_width = math.sqrt((l_shld[0] - r_shld[0])**2 + (l_shld[1] - r_shld[1])**2)
-        norm_diff = curr_diff / shld_width  # 得到的比例相對穩定
+        # 計算特徵值：(肩膀Y - 耳朵Y) / 肩膀寬度
+        curr_diff = shld_y - ear_y
+        shld_width = math.sqrt((lm[11].x - lm[12].x)**2 + (lm[11].y - lm[12].y)**2)
+        norm_diff = curr_diff / shld_width
 
-        # 3. 邏輯判斷
+        # 按 's' 校準
         key = cv2.waitKey(1)
         if key & 0xFF == ord('s'):
             baseline_diff = norm_diff
-            print(f"校準完成！基準值: {baseline_diff:.2f}")
+            print(f"校準完成！基準比例: {baseline_diff:.2f}")
 
         if baseline_diff is not None:
-            # 如果當前比例低於基準值的 80%，判定為低頭或駝背
+            # 判斷是否坐姿不良 (低於基準值的 80%)
             if norm_diff < baseline_diff * 0.8:
-                status = "BAD: Slumping!"
-                color = (0, 0, 255)
-                cv2.rectangle(image, (0,0), (w, h), (0,0,255), 10)
+                if bad_posture_start_time is None:
+                    bad_posture_start_time = time.time()  # 開始計時
+                
+                elapsed_time = time.time() - bad_posture_start_time
+                
+                if elapsed_time >= alert_duration:
+                    status = f"ALARM: SLUMPING ({int(elapsed_time)}s)"
+                    color = (0, 0, 255)
+                    cv2.rectangle(frame, (0,0), (w, h), (0,0,255), 10)
+                else:
+                    status = f"Warning: Detect Bad Posture ({int(elapsed_time)}s)"
+                    color = (0, 165, 255) # 橘色
             else:
-                status = "Good"
+                status = "Good Posture"
                 color = (0, 255, 0)
+                bad_posture_start_time = None  # 恢復正常，重置計時器
             
-            cv2.putText(image, f"Status: {status}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-            cv2.putText(image, f"Diff: {norm_diff:.2f} (Base: {baseline_diff:.2f})", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
         else:
-            cv2.putText(image, "Press 's' to Calibrate", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            cv2.putText(frame, "Press 's' to Calibrate", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
-    cv2.imshow('Improved Posture Checker', image)
-    if cv2.waitKey(1) & 0xFF == ord('q'): break
+    # 顯示畫面
+    cv2.imshow('RPi4 Posture Monitor', frame)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
 
 cap.release()
 cv2.destroyAllWindows()
