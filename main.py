@@ -1,6 +1,8 @@
 import json
 import os
 import threading
+import subprocess
+import time
 
 import numpy as np
 import sounddevice as sd
@@ -99,12 +101,61 @@ if __name__ == "__main__":
     rec = KaldiRecognizer(model, SAMPLING_RATE)
     print("successfully loading model...")
 
+    
+
+    pose_flag = False
+    '''subprocess of detecting pose'''
+    process = subprocess.Popen(
+        ['uv', 'run', 'test_pose.py'],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True
+    )
+    print("Controller started. Waiting for signals...")
+    '''subprocess part ends'''
+
     while True:
-        input("press enter to start recording...")
-        audio = record_until_enter()  
-        duration = len(audio) / SAMPLING_RATE 
-        print(f"finish recording, record time: {duration:.2f}s, start asr...")
-        query = transcribe(audio, rec)
+        # 1. Flag to control the loop
+        waiting = True
+        pose_flag = False
+        def wait_for_input():
+            global waiting
+            input("press enter to start recording...")
+            print('got an enter, start')
+            waiting = False
+        # 2. Start the input listener in the background
+        threading.Thread(target=wait_for_input, daemon=True).start()
+        # 3. Your main detection loop
+        while waiting:
+            # ... your posture detection logic here ...
+            print("Checking posture...", flush=True)
+            '''pose detect'''
+            try:
+                for line in process.stdout:
+                    if waiting == False:
+                        break
+                    line = line.strip()
+                    # Detect the warning signal
+                    if "SIGNAL:WARNING" in line:
+                        print(">>> External Reaction: Bad posture detected! Sending notification...")
+                        # Trigger your external action here
+                        pose_flag = True
+                        waiting = False
+                        break
+            except KeyboardInterrupt:
+                break
+            '''pose detect end'''
+            time.sleep(0.1) # Simulate real-time processing
+
+        if pose_flag:
+            query = 'My sitting pose is bad, please tell me to straight up my body!'
+            pose_flag = False
+        else:
+            print('now recording...')
+            audio = record_until_enter()  
+            duration = len(audio) / SAMPLING_RATE 
+            print(f"finish recording, record time: {duration:.2f}s, start asr...")
+            query = transcribe(audio, rec)
 
         if query:
             print(f"[RESULT]: {query}")
@@ -119,7 +170,7 @@ if __name__ == "__main__":
             base_url="https://openrouter.ai/api/v1"
         )
         response = client.chat.completions.create(
-            model="openrouter/elephant-alpha",
+            model="baidu/qianfan-ocr-fast:free",
             messages=messages,
         )
         # response = chat(
@@ -149,3 +200,7 @@ if __name__ == "__main__":
         # audio = m.generate(text)
         # sd.play(audio, samplerate=24000)
         # sd.wait()
+
+
+
+
