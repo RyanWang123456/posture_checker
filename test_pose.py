@@ -6,6 +6,7 @@ import numpy as np
 import subprocess
 import os
 from datetime import datetime
+from sense_animation import SenseAnimation
 
 # 1. 強制設定樹莓派顯示環境
 os.environ["DISPLAY"] = ":0"
@@ -13,6 +14,7 @@ os.environ["DISPLAY"] = ":0"
 # 2. 初始化 MediaPipe (model_complexity=0 是樹莓派流暢的關鍵)
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose(model_complexity=0, min_detection_confidence=0.5, min_tracking_confidence=0.5)
+anim = SenseAnimation()
 
 # 3. 樹莓派專用 GStreamer 管道 (代替 cap = cv2.VideoCapture)
 W, H = 320, 240
@@ -85,6 +87,8 @@ try:
 
                         # send warning request to llm
                         # print("SIGNAL:WARNING", flush=True)
+                        if not last_signal_is_bad:
+                            anim.play_middle_finger("./middle_finger.bash")
                         last_signal_is_bad = True
                         with open("signal.txt", "w") as f:
                             f.write("SIGNAL:ALARMING")

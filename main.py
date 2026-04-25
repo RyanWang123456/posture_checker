@@ -13,6 +13,7 @@ from vosk import KaldiRecognizer, Model
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from pathlib import Path
+from sense_animation import SenseAnimation
 
 load_dotenv()
 
@@ -180,23 +181,28 @@ if __name__ == "__main__":
         exit()
     print("successfully start posture detection...")
 
+    # initialize animation object
+    anim = SenseAnimation()
 
     try:
         while True:
             print('now recording...')
             input("Press Enter to record...")
             is_recording = True
+            anim.start_loading("./loading2.bash")
             audio = record_until_enter()  
             duration = len(audio) / SAMPLING_RATE 
             print(f"finish recording, record time: {duration:.2f}s, start asr...")
             query = transcribe(audio, rec)
-
+            anim.stop_loading() 
             if query:
                 print(f"[RESULT]: {query}")
             else:
                 print("[RESULT]: EMPTY")
 
+            anim.start_loading("./loading1.bash")
             call_ai(query)
+            anim.stop_loading()
             is_recording = False
     except Exception as e:
         if TARGET_FILE_PATH.exists():
