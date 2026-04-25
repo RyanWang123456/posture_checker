@@ -181,59 +181,27 @@ if __name__ == "__main__":
     print("successfully start posture detection...")
 
 
-    while True:
-        # # 1. Flag to control the loop
-        # waiting = True
-        # pose_flag = False
-        # def wait_for_input():
-        #     global waiting
-        #     input("press enter to start recording...")
-        #     print('got an enter, start')
-        #     waiting = False
-        # # 2. Start the input listener in the background
-        # threading.Thread(target=wait_for_input, daemon=True).start()
-        # # 3. Your main detection loop
-        # while waiting:
-        #     # ... your posture detection logic here ...
-        #     print("Checking posture...", flush=True)
-        #     '''pose detect'''
-        #     try:
-        #         for line in process.stdout:
-        #             if waiting == False:
-        #                 break
-        #             line = line.strip()
-        #             # Detect the warning signal
-        #             if "SIGNAL:WARNING" in line:
-        #                 print(">>> External Reaction: Bad posture detected! Sending notification...")
-        #                 # Trigger your external action here
-        #                 pose_flag = True
-        #                 waiting = False
-        #                 break
-        #     except KeyboardInterrupt:
-        #         break
-        #     '''pose detect end'''
-        #     time.sleep(0.1) # Simulate real-time processing
+    try:
+        while True:
+            print('now recording...')
+            input("Press Enter to record...")
+            is_recording = True
+            audio = record_until_enter()  
+            duration = len(audio) / SAMPLING_RATE 
+            print(f"finish recording, record time: {duration:.2f}s, start asr...")
+            query = transcribe(audio, rec)
 
-        # if pose_flag:
-        #     query = 
-        #     pose_flag = False
-        # else:
+            if query:
+                print(f"[RESULT]: {query}")
+            else:
+                print("[RESULT]: EMPTY")
 
-        print('now recording...')
-        input("Press Enter to record...")
-        is_recording = True
-        audio = record_until_enter()  
-        duration = len(audio) / SAMPLING_RATE 
-        print(f"finish recording, record time: {duration:.2f}s, start asr...")
-        query = transcribe(audio, rec)
+            call_ai(query)
+            is_recording = False
+    except Exception as e:
+        if TARGET_FILE_PATH.exists():
+            TARGET_FILE_PATH.unlink()
 
-        if query:
-            print(f"[RESULT]: {query}")
-        else:
-            print("[RESULT]: EMPTY")
-
-        call_ai(query)
-        is_recording = False
 
 
 
