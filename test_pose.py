@@ -5,6 +5,7 @@ import time
 import numpy as np
 import subprocess
 import os
+from datetime import datetime
 
 # 1. 強制設定樹莓派顯示環境
 os.environ["DISPLAY"] = ":0"
@@ -32,7 +33,12 @@ frame_size = W * H * 3
 print("啟動成功！")
 print("請端正坐好，按 's' 鍵校準，按 'q' 退出。")
 
+if os.path.exists("signal.txt"):
+    print("Remove Existing signal.txt...")
+    os.unlink("signal.txt")
+
 try:
+    last_signal_is_bad = False
     while True:
         # 從系統管道讀取影像數據
         raw_frame = proc.stdout.read(frame_size)
@@ -66,7 +72,7 @@ try:
 
             if baseline_diff is not None:
                 # 判定邏輯 (低於基準 80%)
-                if norm_diff < baseline_diff * 0.8:
+                if norm_diff < baseline_diff * 0.90:
                     if bad_posture_start_time is None:
                         bad_posture_start_time = time.time()
                     
@@ -78,10 +84,11 @@ try:
                         cv2.rectangle(frame, (0,0), (W, H), (0,0,255), 10)
 
                         # send warning request to llm
-                        print("SIGNAL:WARNING", flush=True)
+                        # print("SIGNAL:WARNING", flush=True)
+                        last_signal_is_bad = True
+                        with open("signal.txt", "w") as f:
+                            f.write("SIGNAL:ALARMING")
                         
-
-                    
                     else:
                         status = f"Warning... ({int(elapsed)}s)"
                         color = (0, 165, 255)
@@ -90,6 +97,10 @@ try:
                     status = "Good Posture"
                     color = (0, 255, 0)
                     bad_posture_start_time = None
+                    if last_signal_is_bad:
+                        with open("signal.txt", "w") as f:
+                            f.write("SIGNAL:HEALTH")
+                    last_signal_is_bad = False
                 
                 cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
             else:
